@@ -86,11 +86,11 @@ with tab2:
     
     with col2:
         st.subheader("SHAP: Важность признаков")
-        st.image("1.png", use_column_width=True, caption="Bar plot")  # Добавили подпись
+        st.image("1.png", use_container_width=True, caption="Bar plot")  # Добавили подпись
     
     with col3:
         st.subheader("SHAP: Распределение влияния")
-        st.image("2.png", use_column_width=True, caption="Dot plot")
+        st.image("2.png", use_container_width=True, caption="Dot plot")
 
 with tab3:
     st.markdown("### Визуализация данных")
