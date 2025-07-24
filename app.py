@@ -25,7 +25,7 @@ TARGET_COL  = "Class"        # название таргета
 # ──────────────────────────────────────────────────────────────
 # Конфигурация страницы
 # ──────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Дубов_Артём_Вар7_Rice",
+st.set_page_config(page_title="Дубов_Артём_ПИ1б_Вар7_Rice",
                    layout="wide",
                    initial_sidebar_state="expanded")
 
@@ -80,6 +80,7 @@ def OverviewPage():
     df = load_data(DATA_PATH)
 
     # Основные сведения
+    st.markdown(f"**Дубов_Артём_ПИ1б_Вар7_Rice**")
     st.markdown(f"**Размер:** {df.shape[0]} строк × {df.shape[1]} столбцов")
     st.dataframe(df.head(), use_container_width=True)
 
