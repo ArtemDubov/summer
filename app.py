@@ -19,7 +19,7 @@ from streamlit_shap import st_shap   # pip install streamlit-shap
 
 warnings.filterwarnings("ignore")
 
-DATA_PATH   = "./data.csv"   # файл с исходными данными
+DATA_PATH   = "./data2.csv"   # файл с исходными данными
 TARGET_COL  = "Class"        # название таргета
 
 # ──────────────────────────────────────────────────────────────
