@@ -1,113 +1,191 @@
-import streamlit as st
-import pandas as pd
+# ──────────────────────────────────────────────────────────────
+# Листинг 1. streamlit_app.py – интерактивный дашборд по датасету риса
+# Автор: Дубов Артём • Вариант 7
+# ──────────────────────────────────────────────────────────────
+
+import os, warnings, pathlib
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import shap
-from catboost import CatBoostClassifier
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, recall_score, confusion_matrix
+from sklearn.metrics import accuracy_score, recall_score, f1_score, confusion_matrix
+from catboost import CatBoostClassifier
+import shap
+from streamlit_shap import st_shap   # pip install streamlit-shap
 
-st.set_page_config(
-    page_title="2023-фгииб-пи1б_7_Дубов_Артём_Анатольевич_датасет_рис",
-    layout="wide",
-    initial_sidebar_state="expanded"  # Добавляем боковую панель для навигации
-)
+warnings.filterwarnings("ignore")
 
-st.markdown("""
-    <style>
-    .main {background-color: #f0f8ff;}  /* Светлый фон */
-    h1 {color: #2e8b57;}  /* Цвет заголовка */
-    .stTabs [data-baseweb="tab"] {background-color: #add8e6; border-radius: 5px;}  /* Стиль табов */
-    </style>
-    """, unsafe_allow_html=True)
+DATA_PATH   = "./data.csv"   # файл с исходными данными
+TARGET_COL  = "Class"        # название таргета
 
-st.title("2023пи1б_7_Дубов_Артём_Анатольевич_датасет_рис")
+# ──────────────────────────────────────────────────────────────
+# Конфигурация страницы
+# ──────────────────────────────────────────────────────────────
+st.set_page_config(page_title="Дубов_Артём_Вар7_Rice",
+                   layout="wide",
+                   initial_sidebar_state="expanded")
 
-with st.sidebar:
-    st.header("Навигация")
-    st.markdown("Используйте табы ниже для просмотра разделов.")
-
-@st.cache_data
-def load_data(path="data.csv"):
-    df = pd.read_csv(path)
+# ──────────────────────────────────────────────────────────────
+# Листинг 2. Загрузка и кэширование данных
+# ──────────────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def load_data(path: str) -> pd.DataFrame:
+    if not pathlib.Path(path).exists():
+        st.error(f"Файл {path} не найден"); st.stop()
+    df = pd.read_csv(path, low_memory=False)
     return df
 
-df = load_data()
+# ──────────────────────────────────────────────────────────────
+# Листинг 3. Обучение модели CatBoost + SHAP (кэш результата)
+# ──────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner=True)
+def train_model(df: pd.DataFrame):
+    X = df.drop(columns=[TARGET_COL])
+    y = df[TARGET_COL]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
-X = df.drop(columns=["Class"])
-y = df["Class"]
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.3, random_state=42, stratify=y
-)
-model = CatBoostClassifier(
-    iterations=500,
-    learning_rate=0.05,
-    depth=6,
-    l2_leaf_reg=3,
-    bootstrap_type="Bernoulli",
-    subsample=0.8,
-    random_seed=42,
-    verbose=0
-)
-model.fit(X_train, y_train)
+    model = CatBoostClassifier(
+        iterations=300, depth=6, learning_rate=0.1,
+        loss_function="Logloss", eval_metric="Accuracy",
+        verbose=False, random_seed=42
+    )
+    model.fit(X_train, y_train)
 
-y_pred = model.predict(X_test)
-acc = accuracy_score(y_test, y_pred)
-recall = recall_score(y_test, y_pred, average="macro")
+    preds = model.predict(X_test)
 
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X_test)
+    metrics = dict(
+        accuracy = accuracy_score(y_test, preds),
+        recall   = recall_score(y_test, preds, average="macro"),
+        f1       = f1_score(y_test, preds, average="macro"),
+        cm       = confusion_matrix(y_test, preds, labels=np.unique(y))
+    )
 
-tab1, tab2, tab3 = st.tabs(["📊 Описание и метрики", "🔍 Матрица ошибок и SHAP", "📈 Распределение признаков"])
+    # SHAP-значения
+    explainer   = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_test)
 
-with tab1:
-    st.markdown("### Краткое описание набора данных")
-    st.info(f"- Количество образцов: {df.shape[0]}\n"
-            f"- Количество признаков: {df.shape[1]-1} (без целевой переменной)\n"
-            f"- Признаки: {', '.join(df.columns.drop('Class'))}\n"
-            f"- Типы данных: {df.dtypes.value_counts().to_dict()}")  
-    
-    st.markdown("### Точность модели")
-    st.success(f"- Accuracy: **{acc:.4f}**\n- Recall (macro): **{recall:.4f}**") 
+    return model, X_test, y_test, metrics, shap_values, X.columns
 
-with tab2:
-    st.markdown("### Анализ модели")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    
-    with col1:
-        st.subheader("Матрица ошибок")
-        cm = confusion_matrix(y_test, y_pred)
-        fig1, ax1 = plt.subplots(figsize=(5, 4)) 
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Greens", ax=ax1)
-        ax1.set_xlabel("Predicted")
-        ax1.set_ylabel("Actual")
-        st.pyplot(fig1)
-    
-    with col2:
-        st.subheader("SHAP: Важность признаков")
-        st.image("1.png", use_container_width=True, caption="Bar plot")  # Добавили подпись
-    
-    with col3:
-        st.subheader("SHAP: Распределение влияния")
-        st.image("2.png", use_container_width=True, caption="Dot plot")
+# ──────────────────────────────────────────────────────────────
+# Листинг 4. Страница «Обзор»
+# ──────────────────────────────────────────────────────────────
+def OverviewPage():
+    st.header("📊 Обзор набора данных")
+    df = load_data(DATA_PATH)
 
-with tab3:
-    st.markdown("### Визуализация данных")
+    # Основные сведения
+    st.markdown(f"**Размер:** {df.shape[0]} строк × {df.shape[1]} столбцов")
+    st.dataframe(df.head(), use_container_width=True)
+
+    # Пропуски по столбцам
+    na_counts = df.isna().sum()
+    if na_counts.sum() > 0:
+        fig = px.bar(
+            na_counts[na_counts > 0],
+            orientation='v',
+            labels={'value':'Количество пропусков','index':'Признак'},
+            title="Число пропусков по признакам"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Тепловая карта NAN
+        st.subheader("Карта пропусков")
+        fig2 = px.imshow(df.isna(), aspect="auto", color_continuous_scale="Reds",
+                         labels=dict(color="Пропуск"),
+                         title="Структура пропусков (True = NaN)")
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.success("🚀 Пропущенных значений нет.")
+
+# ──────────────────────────────────────────────────────────────
+# Листинг 5. Страница «Признаки»
+# ──────────────────────────────────────────────────────────────
+def FeaturesPage():
+    st.header("🧮 Исследование признаков")
+    df = load_data(DATA_PATH)
+
+    numeric_cols = (
+        df.drop(columns=[TARGET_COL])
+          .select_dtypes(include=["int64","float64"])
+          .columns.tolist()
+    )
+    if len(numeric_cols) < 2:
+        st.error("Недостаточно числовых признаков для визуализации"); return
+
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.markdown("**Гистограмма Area**")
-        fig4, ax4 = plt.subplots(figsize=(5, 4))
-        sns.histplot(data=df, x="Area", kde=True, ax=ax4, bins=30, color="lightgreen")  # Изменили цвет
-        st.pyplot(fig4)
-    
+        x_feature = st.selectbox("Ось X", numeric_cols, index=0)
     with col2:
-        st.markdown("**Scatter Plot: Area vs. MajorAxisLength**")
-        fig5, ax5 = plt.subplots(figsize=(5, 4))
-        sns.scatterplot(data=df, x="Area", y="MajorAxisLength", hue="Class", palette="coolwarm", s=30, ax=ax5)  # Изменили палитру и размер точек
-        st.pyplot(fig5)
+        y_feature = st.selectbox("Ось Y", numeric_cols, index=1)
 
-# Футер с дополнительной информацией
-st.markdown("---")
-st.caption("Разработано Дубовым Артёмом Анатольевичем | 2023 | Датасет по рису")  # Добавили футер
+    # Диаграмма рассеяния
+    fig = px.scatter(
+        df, x=x_feature, y=y_feature, color=df[TARGET_COL].astype(str),
+        title=f"Взаимосвязь {x_feature} vs {y_feature}",
+        opacity=0.8
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Корреляционная матрица
+    st.subheader("Корреляционная матрица")
+    corr = df[numeric_cols].corr().round(2)
+    fig_corr = px.imshow(
+        corr, text_auto=True, color_continuous_scale="RdBu_r",
+        title="Матрица корреляций"
+    )
+    st.plotly_chart(fig_corr, use_container_width=True)
+
+# ──────────────────────────────────────────────────────────────
+# Листинг 6. Страница «Модель CatBoost»
+# ──────────────────────────────────────────────────────────────
+def ModelPage():
+    st.header("🤖 Обучение модели CatBoost + интерпретация")
+    df = load_data(DATA_PATH)
+
+    model, X_test, y_test, metrics, shap_values, feature_names = train_model(df)
+
+    # Метрики
+    mcol1, mcol2, mcol3 = st.columns(3)
+    mcol1.metric("Accuracy", f"{metrics['accuracy']:.3f}")
+    mcol2.metric("Recall",   f"{metrics['recall']:.3f}")
+    mcol3.metric("F1-score", f"{metrics['f1']:.3f}")
+
+    # Confusion Matrix
+    st.subheader("Матрица ошибок")
+    cm = metrics["cm"]
+    fig_cm = px.imshow(
+        cm, text_auto=True, color_continuous_scale="Blues",
+        labels=dict(x="Предсказано", y="Истинно", color="Частота"),
+        x=np.unique(y_test), y=np.unique(y_test),
+        title="Confusion Matrix"
+    )
+    st.plotly_chart(fig_cm, use_container_width=True)
+
+    # SHAP – важность признаков
+    st.subheader("Значимость признаков (SHAP)")
+    shap_fig_bar  = shap.plots.bar(shap_values, max_display=15, show=False)
+    st_shap(shap_fig_bar, 400)
+
+    st.subheader("SHAP-распределение по объектам")
+    shap_fig_bee  = shap.plots.beeswarm(shap_values, max_display=15, show=False)
+    st_shap(shap_fig_bee, 450)
+
+# ──────────────────────────────────────────────────────────────
+# Листинг 7. Навигация между страницами (st.navigation)
+# ──────────────────────────────────────────────────────────────
+def main():
+    pages = [
+        st.Page(OverviewPage,  title="Обзор",      icon="📊"),
+        st.Page(FeaturesPage,  title="Признаки",   icon="🧮"),
+        st.Page(ModelPage,     title="Модель",     icon="🤖"),
+    ]
+    pg = st.navigation(pages, position="sidebar", expanded=True)
+    pg.run()
+
+if __name__ == "__main__":
+    main()
