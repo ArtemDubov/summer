@@ -166,14 +166,18 @@ def ModelPage():
     )
     st.plotly_chart(fig_cm, use_container_width=True)
 
-    # SHAP – важность признаков
-    st.subheader("Значимость признаков (SHAP)")
-    shap_fig_bar  = shap.plots.bar(shap_values, max_display=15, show=False)
-    st_shap(shap_fig_bar, 400)
+    # Исправление: создаем фигуру явно
+    fig, ax = plt.subplots()
+    shap.summary_plot(shap_values, X_test, show=False)
+    plt.tight_layout()
+    st.pyplot(fig)
+    
+    # Бар важности признаков (без изменений)
+    fig2, ax2 = plt.subplots(figsize=(8, 6))
+    shap.summary_plot(shap_values, X_test, plot_type='bar', show=False)
+    plt.tight_layout()
+    st.pyplot(fig2)
 
-    st.subheader("SHAP-распределение по объектам")
-    shap_fig_bee  = shap.plots.beeswarm(shap_values, max_display=15, show=False)
-    st_shap(shap_fig_bee, 450)
 
 # ──────────────────────────────────────────────────────────────
 # Листинг 7. Навигация между страницами (st.navigation)
